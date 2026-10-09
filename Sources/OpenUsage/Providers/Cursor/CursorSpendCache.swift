@@ -88,11 +88,12 @@ enum CursorSpendPlanner {
         return CursorSpendInterval(start: range.end.addingTimeInterval(-span / 2), end: range.end)
     }
 
-    /// A body that rejected at least one row and does not end on a record boundary. A complete file
-    /// with an isolated bad row still ends in a newline and is safe to merge.
-    static func bodyIsTruncated(_ csv: String, rejectedRowCount: Int) -> Bool {
-        guard rejectedRowCount > 0 else { return false }
-        return !csv.hasSuffix("\n") && !csv.hasSuffix("\r")
+    /// A download that does not end on a record boundary. The trailing `Cost` cell is not read, so a
+    /// cut inside it still parses as a normal row; rejected-row count cannot tell that from a finished
+    /// file. A complete file, including one with an isolated bad row, ends in a newline and can be merged.
+    static func bodyIsTruncated(_ csv: String) -> Bool {
+        guard let last = csv.unicodeScalars.last else { return true }
+        return last != "\n" && last != "\r"
     }
 
     /// Replace rows inside `range` when the response has any, and record the range as covered either

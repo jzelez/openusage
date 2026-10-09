@@ -397,7 +397,7 @@ final class CursorSpendProviderTests: XCTestCase {
         let http = RoutingHTTPClient { request in
             let url = request.url.absoluteString
             if url.contains("export-usage-events-csv") {
-                return HTTPResponse(statusCode: 200, headers: [:], body: Data(csv.utf8))
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data((csv + "\n").utf8))
             }
             if url.contains("GetCurrentPeriodUsage") {
                 return HTTPResponse(statusCode: 200, headers: [:], body: Data("""
@@ -542,6 +542,38 @@ final class CursorSpendProviderTests: XCTestCase {
 
         XCTAssertEqual(totalTokens(snapshot), 161)
         XCTAssertEqual(cache.load(userID: "user_abc123").rows.map(\.input), [50, 111])
+    }
+
+    func testCostCellCutKeepsCachedRowsAndCoverage() async {
+        // Cost is not parsed, so a download cut inside that cell still yields an accepted row.
+        // The missing newline must keep both the cached rows and the coverage unchanged.
+        let now = cursorSpendMidday()
+        let calendar = Calendar.current
+        let cache = isolatedSpendCache()
+        let inside = now.addingTimeInterval(-3600)
+        let older = calendar.date(byAdding: .day, value: -5, to: now)!
+        let seeded = CursorSpendCacheSnapshot(
+            rows: [cachedRow(date: older, input: 50), cachedRow(date: inside, input: 300)],
+            covered: [],
+            retry: nil
+        )
+        cache.save(userID: "user_abc123", seeded)
+        let iso = ISO8601DateFormatter()
+        let csv = """
+        Date,Model,Max Mode,Input (w/ Cache Write),Input (w/o Cache Write),Cache Read,Output Tokens,Cost
+        \(iso.string(from: inside)),composer-1,No,0,1,0,0,Incl
+        """
+        let (provider, _) = probingProvider(now: now, cache: cache) { _ in
+            HTTPResponse(statusCode: 200, headers: [:], body: Data(csv.utf8))
+        }
+
+        let snapshot = await provider.refresh()
+
+        XCTAssertEqual(totalTokens(snapshot), 350)
+        let saved = cache.load(userID: "user_abc123")
+        XCTAssertEqual(saved.rows.map(\.input), [50, 300])
+        XCTAssertEqual(saved.covered, [])
+        XCTAssertNil(saved.retry)
     }
 
     func testSpendTileRendersCombinedCostAndTokensWithValueTooltip() async {
@@ -793,10 +825,12 @@ final class CursorSpendPlannerTests: XCTestCase {
         XCTAssertEqual(CursorSpendPlanner.halvedRetry(tiny), tiny)
     }
 
-    func testTruncationRequiresARejectedRowAndNoRecordBoundary() {
-        XCTAssertTrue(CursorSpendPlanner.bodyIsTruncated("row", rejectedRowCount: 1))
-        XCTAssertFalse(CursorSpendPlanner.bodyIsTruncated("row\n", rejectedRowCount: 1))
-        XCTAssertFalse(CursorSpendPlanner.bodyIsTruncated("row", rejectedRowCount: 0))
+    func testTruncationIsAMissingRecordBoundary() {
+        XCTAssertTrue(CursorSpendPlanner.bodyIsTruncated("row"))
+        XCTAssertTrue(CursorSpendPlanner.bodyIsTruncated("header\nrow,Incl"))
+        XCTAssertFalse(CursorSpendPlanner.bodyIsTruncated("row\n"))
+        XCTAssertFalse(CursorSpendPlanner.bodyIsTruncated("row\r\n"))
+        XCTAssertFalse(CursorSpendPlanner.bodyIsTruncated("bad-middle-row\n"))
     }
 
     private func cachedRow(date: Date, input: Int) -> CursorSpendCachedRow {

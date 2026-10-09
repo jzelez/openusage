@@ -230,7 +230,7 @@ final class CursorProvider: ProviderRuntime {
         let modelPricing = await pricing()
         do {
             let parsed = try CursorUsageCSV.parse(csv: csv, pricing: modelPricing)
-            if CursorSpendPlanner.bodyIsTruncated(csv, rejectedRowCount: parsed.rejectedRowCount) {
+            if CursorSpendPlanner.bodyIsTruncated(csv) {
                 AppLog.warn(LogTag.plugin("cursor"), "usage CSV ended on an incomplete record; keeping cached spend history")
                 return renderSpend(snapshot, pricing: modelPricing, now: end, to: &lines)
             }

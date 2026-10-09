@@ -215,7 +215,7 @@ final class CursorEnterpriseProviderTests: XCTestCase {
                 """.utf8))
             }
             if request.url.absoluteString.hasPrefix(CursorUsageClient.exportCSVURL.absoluteString) {
-                return HTTPResponse(statusCode: 200, headers: [:], body: Data(csv.utf8))
+                return HTTPResponse(statusCode: 200, headers: [:], body: Data((csv + "\n").utf8))
             }
             return HTTPResponse(statusCode: 404, headers: [:], body: Data())
         }
